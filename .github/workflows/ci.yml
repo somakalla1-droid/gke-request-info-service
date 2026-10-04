@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: {go-version-file: go.mod, cache: true}
+        with: {go-version-file: go.mod, cache: false}
       - run: go test -race -coverprofile=coverage.out ./...
       - run: go vet ./...
       - uses: azure/setup-helm@v4
