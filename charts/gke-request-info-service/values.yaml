@@ -5,6 +5,12 @@ image:
   pullPolicy: IfNotPresent
 serviceAccount: {create: true, name: ""}
 service: {type: ClusterIP, port: 80}
+ingress:
+  # Disabled by default: enabling it provisions a billable external GKE load balancer.
+  enabled: false
+  # Leave empty to route the load balancer IP's default host. Set a domain only
+  # after its DNS record and TLS certificate strategy are in place.
+  host: ""
 resources:
   requests: {cpu: 50m, memory: 64Mi}
   limits: {cpu: 250m, memory: 128Mi}
