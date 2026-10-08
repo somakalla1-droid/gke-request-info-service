@@ -49,6 +49,6 @@ helm upgrade request-info charts/gke-request-info-service \
   --timeout 10m
 ```
 
-This provisions a GKE external Application Load Balancer with an ephemeral public IP and a container-native NEG backend. It is billable and HTTP-only until a domain, DNS record, and TLS certificate are deliberately configured. Disable it after collecting evidence with `helm upgrade request-info charts/gke-request-info-service --namespace assessment-apps --set ingress.enabled=false`.
+This provisions a GKE external Application Load Balancer with an ephemeral public IP and a container-native NEG backend. The chart deliberately uses `kubernetes.io/ingress.class: gce`: GKE's built-in controller requires that annotation and does not process `spec.ingressClassName`, despite Kubernetes marking the annotation legacy. It is billable and HTTP-only until a domain, DNS record, and TLS certificate are deliberately configured. Disable it after collecting evidence with `helm upgrade request-info charts/gke-request-info-service --namespace assessment-apps --set ingress.enabled=false`.
 
 For sensitive settings, use an externally managed Kubernetes Secret by setting `secret.existingSecret`, or enable chart-managed creation with `secret.create=true` and a non-empty `secret.stringData` map. Never commit real secret values in a values file. The assessment's production design will use Secret Manager with Workload Identity Federation.

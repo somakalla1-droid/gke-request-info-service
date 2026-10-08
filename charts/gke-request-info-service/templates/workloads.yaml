@@ -52,8 +52,11 @@ kind: Ingress
 metadata:
   name: {{ include "app.fullname" . }}
   labels: {{- include "app.labels" . | nindent 4 }}
+  # GKE's built-in controller requires this annotation; it does not process
+  # spec.ingressClassName even though Kubernetes marks the annotation legacy.
+  annotations:
+    kubernetes.io/ingress.class: "gce"
 spec:
-  ingressClassName: gce
   defaultBackend:
     service:
       name: {{ include "app.fullname" . }}
