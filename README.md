@@ -1,6 +1,6 @@
 # GKE Request Info Service
 
-Application A for the GKE SRE assessment. It returns request, build, pod, cluster, and region metadata while exposing health, readiness, Prometheus metrics, controlled-error, and controlled-latency endpoints.
+Application A for the GKE SRE assessment. It returns request, build, pod, cluster, and region metadata while exposing health, readiness, Prometheus metrics, controlled-error, and controlled-latency endpoints. Request completion logs are newline-delimited JSON with `severity`, `status_code`, `request_id`, and `latency_ms` fields for Cloud Logging, BigQuery, and Grafana analysis.
 
 ## Run locally
 

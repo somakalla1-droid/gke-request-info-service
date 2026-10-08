@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -14,6 +15,27 @@ type Config struct{ AppName, Version, ClusterName, Region, PodName string }
 type service struct {
 	config           Config
 	requests, errors atomic.Uint64
+}
+
+var requestLogger = log.New(os.Stdout, "", 0)
+
+type statusWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (w *statusWriter) WriteHeader(statusCode int) {
+	if w.statusCode == 0 {
+		w.statusCode = statusCode
+	}
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *statusWriter) Write(body []byte) (int, error) {
+	if w.statusCode == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(body)
 }
 
 func New(config Config) http.Handler {
@@ -58,9 +80,22 @@ func (s *service) logging(next http.Handler) http.Handler {
 		s.requests.Add(1)
 		id := requestID(r)
 		w.Header().Set("X-Request-ID", id)
-		next.ServeHTTP(w, r)
-		entry, _ := json.Marshal(map[string]any{"severity": "INFO", "message": "request completed", "method": r.Method, "path": r.URL.Path, "request_id": id, "latency_ms": time.Since(started).Milliseconds()})
-		log.Print(string(entry))
+		recorder := &statusWriter{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+
+		statusCode := recorder.statusCode
+		if statusCode == 0 {
+			statusCode = http.StatusOK
+		}
+		severity := "INFO"
+		if statusCode >= http.StatusInternalServerError {
+			severity = "ERROR"
+		} else if statusCode >= http.StatusBadRequest {
+			severity = "WARNING"
+		}
+
+		entry, _ := json.Marshal(map[string]any{"severity": severity, "message": "request completed", "method": r.Method, "path": r.URL.Path, "request_id": id, "status_code": statusCode, "latency_ms": time.Since(started).Milliseconds()})
+		requestLogger.Print(string(entry))
 	})
 }
 func requestID(r *http.Request) string {
