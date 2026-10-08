@@ -14,6 +14,7 @@ data:
   APP_VERSION: {{ .Chart.AppVersion | quote }}
   CLUSTER_NAME: {{ .Values.config.clusterName | quote }}
   REGION: {{ .Values.config.region | quote }}
+  RESPONSE_SERVICE_URL: {{ .Values.config.responseServiceURL | quote }}
 ---
 {{- if .Values.secret.create }}
 {{- if not .Values.secret.stringData }}
@@ -60,7 +61,12 @@ spec:
         - name: application
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: {drop: ["ALL"]}
           envFrom:
             - configMapRef:
                 name: {{ include "app.configMap" . }}

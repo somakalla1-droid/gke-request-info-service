@@ -3,18 +3,23 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 )
 
-type Config struct{ AppName, Version, ClusterName, Region, PodName string }
+type Config struct {
+	AppName, Version, ClusterName, Region, PodName, ResponseServiceURL string
+}
 type service struct {
 	config           Config
 	requests, errors atomic.Uint64
+	client           *http.Client
 }
 
 var requestLogger = log.New(os.Stdout, "", 0)
@@ -39,7 +44,7 @@ func (w *statusWriter) Write(body []byte) (int, error) {
 }
 
 func New(config Config) http.Handler {
-	s := &service{config: config}
+	s := &service{config: config, client: &http.Client{Timeout: 2 * time.Second}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.info)
 	mux.HandleFunc("/healthz", plain("ok"))
@@ -55,7 +60,51 @@ func (s *service) info(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"application": s.config.AppName, "version": s.config.Version, "cluster": s.config.ClusterName, "region": s.config.Region, "pod": s.config.PodName, "request_id": requestID(r), "timestamp": time.Now().UTC().Format(time.RFC3339Nano)})
+	result := map[string]any{
+		"application": s.config.AppName,
+		"version":     s.config.Version,
+		"cluster":     s.config.ClusterName,
+		"region":      s.config.Region,
+		"pod":         s.config.PodName,
+		"request_id":  requestID(r),
+		"timestamp":   time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if s.config.ResponseServiceURL != "" {
+		downstream, statusCode, latency, err := s.responseService(r)
+		if err != nil {
+			s.errors.Add(1)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "response service unavailable", "request_id": requestID(r)})
+			return
+		}
+		result["response_service"] = downstream
+		result["response_status_code"] = statusCode
+		result["response_latency_ms"] = latency.Milliseconds()
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *service) responseService(r *http.Request) (map[string]any, int, time.Duration, error) {
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, strings.TrimRight(s.config.ResponseServiceURL, "/")+"/", nil)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	request.Header.Set("X-Request-ID", requestID(r))
+	started := time.Now()
+	response, err := s.client.Do(request)
+	latency := time.Since(started)
+	if err != nil {
+		return nil, 0, latency, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+		return nil, response.StatusCode, latency, fmt.Errorf("response service returned %s", response.Status)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&body); err != nil {
+		return nil, response.StatusCode, latency, err
+	}
+	return body, response.StatusCode, latency, nil
 }
 func (s *service) metrics(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
