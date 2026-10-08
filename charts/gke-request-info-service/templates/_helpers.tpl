@@ -7,3 +7,5 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 {{- define "app.serviceAccount" -}}{{ default (include "app.fullname" .) .Values.serviceAccount.name }}{{- end }}
+{{- define "app.configMap" -}}{{ printf "%s-config" (include "app.fullname" .) }}{{- end }}
+{{- define "app.secret" -}}{{ default (printf "%s-secrets" (include "app.fullname" .)) .Values.secret.existingSecret }}{{- end }}

@@ -6,6 +6,32 @@ metadata:
 automountServiceAccountToken: false
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "app.configMap" . }}
+  labels: {{- include "app.labels" . | nindent 4 }}
+data:
+  APP_VERSION: {{ .Chart.AppVersion | quote }}
+  CLUSTER_NAME: {{ .Values.config.clusterName | quote }}
+  REGION: {{ .Values.config.region | quote }}
+---
+{{- if .Values.secret.create }}
+{{- if not .Values.secret.stringData }}
+{{- fail "secret.stringData must contain at least one value when secret.create is true" }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "app.secret" . }}
+  labels: {{- include "app.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+{{- range $key, $value := .Values.secret.stringData }}
+  {{ $key }}: {{ $value | quote }}
+{{- end }}
+---
+{{- end }}
+apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "app.fullname" . }}
@@ -35,10 +61,14 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          envFrom:
+            - configMapRef:
+                name: {{ include "app.configMap" . }}
+            {{- if or .Values.secret.create .Values.secret.existingSecret }}
+            - secretRef:
+                name: {{ include "app.secret" . }}
+            {{- end }}
           env:
-            - {name: APP_VERSION, value: {{ .Chart.AppVersion | quote }}}
-            - {name: CLUSTER_NAME, value: {{ .Values.environment.clusterName | quote }}}
-            - {name: REGION, value: {{ .Values.environment.region | quote }}}
             - name: POD_NAME
               valueFrom: {fieldRef: {fieldPath: metadata.name}}
           ports: [{name: http, containerPort: 8080}]
