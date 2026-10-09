@@ -7,14 +7,18 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Config struct {
-	AppName, Version, ClusterName, Region, PodName, ResponseServiceURL string
+	AppName, Version, ProjectID, ClusterName, Region, PodName, ResponseServiceURL string
 }
 type service struct {
 	config           Config
@@ -23,6 +27,7 @@ type service struct {
 }
 
 var requestLogger = log.New(os.Stdout, "", 0)
+var errorLogger = log.New(os.Stderr, "", 0)
 
 type statusWriter struct {
 	http.ResponseWriter
@@ -44,7 +49,16 @@ func (w *statusWriter) Write(body []byte) (int, error) {
 }
 
 func New(config Config) http.Handler {
-	s := &service{config: config, client: &http.Client{Timeout: 2 * time.Second}}
+	s := &service{
+		config: config,
+		client: &http.Client{
+			Timeout: 2 * time.Second,
+			Transport: otelhttp.NewTransport(
+				http.DefaultTransport,
+				otelhttp.WithFilter(shouldTraceRequest),
+			),
+		},
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.info)
 	mux.HandleFunc("/healthz", plain("ok"))
@@ -52,7 +66,7 @@ func New(config Config) http.Handler {
 	mux.HandleFunc("/metrics", s.metrics)
 	mux.HandleFunc("/error", s.controlledError)
 	mux.HandleFunc("/delay", s.delay)
-	return s.logging(mux)
+	return otelhttp.NewHandler(s.logging(mux), config.AppName, otelhttp.WithFilter(shouldTraceRequest))
 }
 
 func (s *service) info(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +103,7 @@ func (s *service) responseService(r *http.Request) (map[string]any, int, time.Du
 		return nil, 0, 0, err
 	}
 	request.Header.Set("X-Request-ID", requestID(r))
+	request.Header.Set("User-Agent", r.UserAgent())
 	started := time.Now()
 	response, err := s.client.Do(request)
 	latency := time.Since(started)
@@ -112,7 +127,18 @@ func (s *service) metrics(w http.ResponseWriter, _ *http.Request) {
 }
 func (s *service) controlledError(w http.ResponseWriter, r *http.Request) {
 	s.errors.Add(1)
-	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "controlled observability test", "request_id": requestID(r)})
+	id := requestID(r)
+	entry, _ := json.Marshal(map[string]any{
+		"severity":   "ERROR",
+		"message":    fmt.Sprintf("controlled observability test\n%s", debug.Stack()),
+		"request_id": id,
+		"serviceContext": map[string]string{
+			"service": s.config.AppName,
+			"version": s.config.Version,
+		},
+	})
+	errorLogger.Print(string(entry))
+	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "controlled observability test", "request_id": id})
 }
 func (s *service) delay(w http.ResponseWriter, r *http.Request) {
 	milliseconds, err := strconv.Atoi(r.URL.Query().Get("ms"))
@@ -128,6 +154,7 @@ func (s *service) logging(next http.Handler) http.Handler {
 		started := time.Now()
 		s.requests.Add(1)
 		id := requestID(r)
+		r.Header.Set("X-Request-ID", id)
 		w.Header().Set("X-Request-ID", id)
 		recorder := &statusWriter{ResponseWriter: w}
 		next.ServeHTTP(recorder, r)
@@ -143,9 +170,23 @@ func (s *service) logging(next http.Handler) http.Handler {
 			severity = "WARNING"
 		}
 
-		entry, _ := json.Marshal(map[string]any{"severity": severity, "message": "request completed", "method": r.Method, "path": r.URL.Path, "request_id": id, "status_code": statusCode, "latency_ms": time.Since(started).Milliseconds()})
-		requestLogger.Print(string(entry))
+		entry := map[string]any{"severity": severity, "message": "request completed", "method": r.Method, "path": r.URL.Path, "request_id": id, "status_code": statusCode, "latency_ms": time.Since(started).Milliseconds()}
+		spanContext := trace.SpanContextFromContext(r.Context())
+		if spanContext.IsValid() {
+			entry["logging.googleapis.com/trace"] = fmt.Sprintf("projects/%s/traces/%s", s.config.ProjectID, spanContext.TraceID())
+			entry["logging.googleapis.com/spanId"] = spanContext.SpanID().String()
+			entry["logging.googleapis.com/trace_sampled"] = spanContext.IsSampled()
+		}
+		encoded, _ := json.Marshal(entry)
+		requestLogger.Print(string(encoded))
 	})
+}
+
+func shouldTraceRequest(r *http.Request) bool {
+	return r.URL.Path != "/healthz" &&
+		r.URL.Path != "/readyz" &&
+		r.URL.Path != "/metrics" &&
+		!strings.HasPrefix(r.UserAgent(), "GoogleHC/")
 }
 func requestID(r *http.Request) string {
 	if id := r.Header.Get("X-Request-ID"); id != "" {

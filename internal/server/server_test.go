@@ -8,6 +8,10 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 func TestInfo(t *testing.T) {
@@ -52,6 +56,37 @@ func TestInfoCallsResponseServiceWithRequestID(t *testing.T) {
 	}
 }
 
+func TestInfoPropagatesTraceContext(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	previousPropagator := otel.GetTextMapPropagator()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() {
+		_ = provider.Shutdown(t.Context())
+		otel.SetTracerProvider(previousProvider)
+		otel.SetTextMapPropagator(previousPropagator)
+	})
+
+	var traceparent string
+	response := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceparent = r.Header.Get("traceparent")
+		_ = json.NewEncoder(w).Encode(map[string]string{"application": "response-service"})
+	}))
+	defer response.Close()
+
+	h := New(Config{AppName: "request-info", ResponseServiceURL: response.URL})
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", res.Code, res.Body.String())
+	}
+	if traceparent == "" {
+		t.Fatal("downstream request has no traceparent header")
+	}
+}
+
 func TestInfoReturnsBadGatewayWhenResponseServiceFails(t *testing.T) {
 	h := New(Config{ResponseServiceURL: "http://127.0.0.1:1"})
 	res := httptest.NewRecorder()
@@ -71,8 +106,13 @@ func TestControlledError(t *testing.T) {
 
 func TestControlledErrorLogsStatusAndSeverity(t *testing.T) {
 	var logs bytes.Buffer
+	var errorLogs bytes.Buffer
 	requestLogger.SetOutput(&logs)
-	t.Cleanup(func() { requestLogger.SetOutput(os.Stdout) })
+	errorLogger.SetOutput(&errorLogs)
+	t.Cleanup(func() {
+		requestLogger.SetOutput(os.Stdout)
+		errorLogger.SetOutput(os.Stderr)
+	})
 
 	h := New(Config{})
 	res := httptest.NewRecorder()
@@ -87,6 +127,13 @@ func TestControlledErrorLogsStatusAndSeverity(t *testing.T) {
 	}
 	if entry["status_code"] != float64(http.StatusInternalServerError) {
 		t.Fatalf("status_code = %v", entry["status_code"])
+	}
+	var errorEntry map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(errorLogs.Bytes()), &errorEntry); err != nil {
+		t.Fatalf("error report is not JSON: %v", err)
+	}
+	if !strings.Contains(errorEntry["message"].(string), "goroutine") {
+		t.Fatal("error report does not contain a Go stack trace")
 	}
 }
 func TestDelayRejectsRange(t *testing.T) {

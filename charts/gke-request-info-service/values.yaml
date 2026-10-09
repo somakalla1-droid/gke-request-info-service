@@ -24,6 +24,9 @@ config:
   clusterName: unknown
   region: unknown
   responseServiceURL: ""
+observability:
+  enabled: false
+  projectId: gke-sre-assesment
 secret:
   create: false
   existingSecret: ""

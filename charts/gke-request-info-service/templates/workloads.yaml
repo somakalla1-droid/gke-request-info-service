@@ -11,10 +11,12 @@ metadata:
   name: {{ include "app.configMap" . }}
   labels: {{- include "app.labels" . | nindent 4 }}
 data:
-  APP_VERSION: {{ .Chart.AppVersion | quote }}
+  APP_VERSION: {{ .Values.image.tag | quote }}
   CLUSTER_NAME: {{ .Values.config.clusterName | quote }}
   REGION: {{ .Values.config.region | quote }}
   RESPONSE_SERVICE_URL: {{ .Values.config.responseServiceURL | quote }}
+  OBSERVABILITY_ENABLED: {{ .Values.observability.enabled | quote }}
+  GOOGLE_CLOUD_PROJECT: {{ .Values.observability.projectId | quote }}
 ---
 {{- if .Values.secret.create }}
 {{- if not .Values.secret.stringData }}
@@ -99,6 +101,10 @@ spec:
       labels: {{- include "app.labels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "app.serviceAccount" . }}
+      {{- if .Values.observability.enabled }}
+      nodeSelector:
+        iam.gke.io/gke-metadata-server-enabled: "true"
+      {{- end }}
       securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: application

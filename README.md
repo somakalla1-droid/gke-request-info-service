@@ -12,7 +12,17 @@ curl -s http://localhost:8080/ | jq
 
 Endpoints: `/`, `/healthz`, `/readyz`, `/metrics`, `/error`, and `/delay?ms=250`.
 
-Configuration: `PORT`, `APP_VERSION`, `CLUSTER_NAME`, `REGION`, `POD_NAME`, and optional `RESPONSE_SERVICE_URL`.
+Configuration: `PORT`, `APP_VERSION`, `CLUSTER_NAME`, `REGION`, `POD_NAME`,
+optional `RESPONSE_SERVICE_URL`, `OBSERVABILITY_ENABLED`, and
+`GOOGLE_CLOUD_PROJECT`.
+
+Cloud observability is disabled by default for credential-free local runs. In
+GKE, the service exports an inbound HTTP server span and an outbound client span
+through authenticated OTLP, propagates W3C `traceparent` to the response
+service, starts Cloud Profiler, correlates request logs with trace/span IDs, and
+formats controlled errors for Error Reporting. Telemetry startup failures are
+non-fatal. Kubernetes probe paths and Google load-balancer health checks are
+excluded from tracing.
 
 ## Container and Kubernetes
 
@@ -32,7 +42,9 @@ The chart always creates a ConfigMap containing `APP_VERSION`, `CLUSTER_NAME`, a
 helm upgrade --install request-info charts/gke-request-info-service \
   --set config.clusterName=gke-primary \
   --set config.region=us-central1 \
-  --set config.responseServiceURL=http://response-gke-response-service.assessment-apps.svc.cluster.local
+  --set config.responseServiceURL=http://response-gke-response-service.assessment-apps.svc.cluster.local \
+  --set observability.enabled=true \
+  --set observability.projectId=gke-sre-assesment
 ```
 
 When `RESPONSE_SERVICE_URL` is configured, Application A calls Application B for each `GET /` request and forwards the same `X-Request-ID`. Its response includes the downstream metadata, HTTP status, and downstream latency. If Application B is unavailable, Application A returns `502 Bad Gateway`; the structured request log records the error severity and status code.
