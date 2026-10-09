@@ -7,4 +7,4 @@ coverage.out
 .env
 .env.*
 !.env.example
-
+gha-creds-*.json
