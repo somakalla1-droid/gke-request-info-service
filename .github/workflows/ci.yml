@@ -16,4 +16,5 @@ jobs:
       - run: go vet ./...
       - uses: azure/setup-helm@v4
       - run: helm lint charts/gke-request-info-service
+      - run: helm template request-info charts/gke-request-info-service --namespace assessment-apps --set serviceExport.enabled=true | grep -q 'kind: ServiceExport'
       - run: docker build -t gke-request-info-service:${{ github.sha }} .

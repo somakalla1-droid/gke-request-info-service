@@ -5,6 +5,10 @@ image:
   pullPolicy: IfNotPresent
 serviceAccount: {create: true, name: ""}
 service: {type: ClusterIP, port: 80}
+serviceExport:
+  # Export only Application A for Multi-Cluster Services. The response service
+  # remains cluster-local so each request instance calls its local dependency.
+  enabled: false
 ingress:
   # Disabled by default: enabling it provisions a billable external GKE load balancer.
   enabled: false

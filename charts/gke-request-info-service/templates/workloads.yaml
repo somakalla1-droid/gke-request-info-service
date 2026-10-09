@@ -46,6 +46,14 @@ spec:
   selector: {app.kubernetes.io/name: {{ include "app.name" . }}, app.kubernetes.io/instance: {{ .Release.Name }}}
   ports: [{name: http, port: {{ .Values.service.port }}, targetPort: http}]
 ---
+{{- if .Values.serviceExport.enabled }}
+apiVersion: net.gke.io/v1
+kind: ServiceExport
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels: {{- include "app.labels" . | nindent 4 }}
+---
+{{- end }}
 {{- if .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress

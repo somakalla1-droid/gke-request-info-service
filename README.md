@@ -51,4 +51,29 @@ helm upgrade request-info charts/gke-request-info-service \
 
 This provisions a GKE external Application Load Balancer with an ephemeral public IP and a container-native NEG backend. The chart deliberately uses `kubernetes.io/ingress.class: gce`: GKE's built-in controller requires that annotation and does not process `spec.ingressClassName`, despite Kubernetes marking the annotation legacy. It is billable and HTTP-only until a domain, DNS record, and TLS certificate are deliberately configured. Disable it after collecting evidence with `helm upgrade request-info charts/gke-request-info-service --namespace assessment-apps --set ingress.enabled=false`.
 
+### Multi-cluster backend export
+
+After both clusters are registered to the same fleet and Multi-Cluster Services
+is healthy, export the request Service from each cluster by setting
+`serviceExport.enabled=true` on both Helm releases. The generated
+`ServiceExport` has the same name and namespace as the chart's `Service`, so
+GKE combines the healthy request-info Pods into one `ServiceImport` for a
+multi-cluster Gateway backend.
+
+```bash
+helm upgrade request-info charts/gke-request-info-service \
+  --namespace assessment-apps \
+  --reuse-values \
+  --set serviceExport.enabled=true \
+  --wait \
+  --timeout 10m \
+  --rollback-on-failure
+```
+
+Export only the request service. The response service remains private and
+cluster-local, preserving the flow `Gateway -> request-info -> local response`
+and preventing direct external routing to Application B. Enabling the export
+does not itself create a public address or load balancer; those are created
+later by the platform-owned `Gateway` and `HTTPRoute`.
+
 For sensitive settings, use an externally managed Kubernetes Secret by setting `secret.existingSecret`, or enable chart-managed creation with `secret.create=true` and a non-empty `secret.stringData` map. Never commit real secret values in a values file. The assessment's production design will use Secret Manager with Workload Identity Federation.
