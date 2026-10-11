@@ -2,6 +2,9 @@ replicaCount: 2
 image:
   repository: us-central1-docker.pkg.dev/gke-sre-assesment/gke-apps/gke-request-info-service
   tag: latest
+  # When set, the Deployment uses repository@digest. Keep tag populated so the
+  # application can still report a human-readable build version.
+  digest: ""
   pullPolicy: IfNotPresent
 serviceAccount: {create: true, name: ""}
 service: {type: ClusterIP, port: 80}

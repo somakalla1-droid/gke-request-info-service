@@ -9,3 +9,13 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- define "app.serviceAccount" -}}{{ default (include "app.fullname" .) .Values.serviceAccount.name }}{{- end }}
 {{- define "app.configMap" -}}{{ printf "%s-config" (include "app.fullname" .) }}{{- end }}
 {{- define "app.secret" -}}{{ default (printf "%s-secrets" (include "app.fullname" .)) .Values.secret.existingSecret }}{{- end }}
+{{- define "app.image" -}}
+{{- if .Values.image.digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .Values.image.digest) -}}
+{{- fail "image.digest must use the form sha256:<64 lowercase hexadecimal characters>" -}}
+{{- end -}}
+{{- printf "%s@%s" .Values.image.repository .Values.image.digest -}}
+{{- else -}}
+{{- printf "%s:%s" .Values.image.repository .Values.image.tag -}}
+{{- end -}}
+{{- end }}

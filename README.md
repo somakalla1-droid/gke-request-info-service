@@ -34,6 +34,22 @@ helm lint charts/gke-request-info-service
 
 The image is distroless and non-root. The Helm chart uses numeric UID/GID `65532` so Kubernetes can verify the `runAsNonRoot` policy. It owns the Deployment, Service, ServiceAccount, HPA, and PodDisruptionBudget. CI/CD authentication will use GitHub OIDC and Google Workload Identity Federation; static service-account keys are prohibited.
 
+For a release, set both the human-readable commit tag and the verified GAR
+digest. The Deployment then uses the immutable `repository@sha256:...`
+reference while `APP_VERSION` continues to report the commit tag:
+
+```bash
+helm upgrade request-info charts/gke-request-info-service \
+  --namespace assessment-apps \
+  --reuse-values \
+  --set-string image.tag=COMMIT_SHA \
+  --set-string image.digest=sha256:IMAGE_DIGEST
+```
+
+If `image.digest` is empty, the chart retains tag-based rendering for local
+development. Production and Binary Authorization deployments must supply a
+verified digest.
+
 ### Kubernetes configuration
 
 The chart always creates a ConfigMap containing `APP_VERSION`, `CLUSTER_NAME`, and `REGION`. Set the deployment values without editing manifests:
