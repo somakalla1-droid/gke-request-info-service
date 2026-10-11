@@ -19,7 +19,7 @@ jobs:
         with: {go-version-file: go.mod, cache: false}
       - run: go test -race -coverprofile=coverage.out ./...
       - run: go vet ./...
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - run: helm lint charts/gke-request-info-service
       - name: Verify immutable image rendering
         run: |
