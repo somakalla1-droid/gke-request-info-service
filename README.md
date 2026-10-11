@@ -54,9 +54,11 @@ On a push to `main`, CI authenticates first as the Artifact Registry publisher,
 builds and pushes the commit-tagged image, and captures the registry-reported
 digest. It then exchanges a separate GitHub OIDC token for the dedicated
 `github-release-attestor` identity and creates a validated Binary Authorization
-attestation over `IMAGE_NAME@sha256:...` with the Cloud KMS release key. Neither
-identity uses a downloaded service-account key: the publisher cannot sign, and
-the signer cannot publish images.
+attestation over `IMAGE_NAME@sha256:...` with the Cloud KMS release key. CI reads
+the public-key ID registered on the attestor and records that exact ID in the
+attestation occurrence, allowing GKE admission to associate the signature with
+the trusted key. Neither identity uses a downloaded service-account key: the
+publisher cannot sign, and the signer cannot publish images.
 
 ### Kubernetes configuration
 

@@ -86,6 +86,14 @@ jobs:
             echo "Unexpected image digest: ${IMAGE_DIGEST}" >&2
             exit 1
           fi
+          ATTESTOR_KEY_ID=$(gcloud container binauthz attestors describe \
+            gke-release-attestor \
+            --project=gke-sre-assesment \
+            --format='value(userOwnedGrafeasNote.publicKeys[0].id)')
+          if [[ -z "${ATTESTOR_KEY_ID}" ]]; then
+            echo "The release attestor has no registered public-key ID" >&2
+            exit 1
+          fi
           gcloud beta container binauthz attestations sign-and-create \
             --project=gke-sre-assesment \
             --artifact-url="${IMAGE_NAME}@${IMAGE_DIGEST}" \
@@ -96,5 +104,6 @@ jobs:
             --keyversion-keyring=gke-binary-authorization \
             --keyversion-key=gke-release-attestor \
             --keyversion=1 \
+            --public-key-id-override="${ATTESTOR_KEY_ID}" \
             --validate \
             --quiet
