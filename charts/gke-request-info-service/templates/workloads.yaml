@@ -108,7 +108,7 @@ spec:
       securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: application
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: {{ include "app.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
